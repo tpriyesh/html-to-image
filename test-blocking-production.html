@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔴 BLOCKING - Production Simulation (OLD API)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+      padding: 20px;
+      color: white;
+    }
+
+    .monitor {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.95);
+      color: #0f0;
+      padding: 20px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      width: 400px;
+      max-height: 90vh;
+      overflow-y: auto;
+      z-index: 1000;
+      border: 2px solid #ff0000;
+    }
+
+    .monitor h2 {
+      color: #ff0000;
+      margin-bottom: 15px;
+      font-size: 18px;
+      text-transform: uppercase;
+    }
+
+    .metric {
+      margin: 8px 0;
+      padding: 8px;
+      background: rgba(255, 0, 0, 0.1);
+      border-left: 3px solid #ff0000;
+    }
+
+    .metric-label {
+      color: #ff6666;
+      font-weight: bold;
+    }
+
+    .metric-value {
+      color: #0f0;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .status {
+      padding: 10px;
+      background: rgba(255, 255, 0, 0.1);
+      border-left: 3px solid #ff0;
+      margin: 10px 0;
+      color: #ff0;
+    }
+
+    .counter {
+      font-size: 32px;
+      color: #0f0;
+      text-align: center;
+      padding: 10px;
+      background: rgba(0, 255, 0, 0.1);
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #333;
+      border-top: 4px solid #0f0;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 10px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .log {
+      margin-top: 15px;
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 10px;
+    }
+
+    .log-entry {
+      margin: 2px 0;
+      color: #0f0;
+    }
+
+    .log-entry.warning {
+      color: #ff0;
+    }
+
+    .log-entry.error {
+      color: #f00;
+    }
+
+    .result {
+      margin-top: 15px;
+      padding: 10px;
+      background: rgba(0, 255, 0, 0.1);
+      border-radius: 4px;
+    }
+
+    .result img {
+      max-width: 100%;
+      border: 2px solid #0f0;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+
+    #dashboard {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      margin-right: 450px;
+      color: #333;
+    }
+
+    .header {
+      text-align: center;
+      padding: 30px;
+      background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+      border-radius: 12px;
+      margin-bottom: 30px;
+      color: white;
+    }
+
+    .header h1 {
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
+
+    .live-data {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .live-card {
+      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+      padding: 15px;
+      border-radius: 8px;
+      border: 2px solid #ccc;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 5px rgba(102, 126, 234, 0.5); }
+      50% { box-shadow: 0 0 20px rgba(102, 126, 234, 0.8); }
+    }
+
+    .live-card-title {
+      font-size: 11px;
+      font-weight: bold;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .live-card-value {
+      font-size: 28px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .live-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #4CAF50;
+      color: white;
+      border-radius: 10px;
+      font-size: 9px;
+      font-weight: bold;
+      animation: blink 1s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .visualization {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 12px;
+      border: 2px solid #ddd;
+    }
+
+    .viz-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: #333;
+    }
+
+    canvas {
+      display: block;
+      max-width: 100%;
+      border-radius: 8px;
+    }
+
+    .data-table {
+      width: 100%;
+      background: white;
+      border-radius: 12px;
+      overflow: auto;
+      max-height: 400px;
+      border: 2px solid #ddd;
+      margin: 20px 0;
+    }
+
+    .data-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th {
+      position: sticky;
+      top: 0;
+      background: #667eea;
+      color: white;
+      padding: 12px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .data-table td {
+      padding: 10px;
+      border-top: 1px solid #e0e0e0;
+      font-size: 12px;
+    }
+
+    .data-table tr:nth-child(even) {
+      background: #f9f9f9;
+    }
+  </style>
+</head>
+<body>
+  <div class="monitor">
+    <h2>🔴 OLD API - BLOCKING TEST</h2>
+
+    <div class="status">
+      ⚠️ This uses OLD API - UI will FREEZE!
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Live Counter:</div>
+      <div class="counter" id="counter">0</div>
+    </div>
+
+    <div style="text-align: center;">
+      <div class="spinner"></div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Page Load Time:</div>
+      <div class="metric-value" id="pageLoadTime">-</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Total DOM Nodes:</div>
+      <div class="metric-value" id="domNodes">-</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Canvas Data Points:</div>
+      <div class="metric-value" id="canvasPoints">-</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Active Timers:</div>
+      <div class="metric-value" id="activeTimers">5</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Capture Start Time:</div>
+      <div class="metric-value" id="captureStart">-</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Capture Duration:</div>
+      <div class="metric-value" id="captureDuration">-</div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-label">Missed Counter Updates:</div>
+      <div class="metric-value" id="missedUpdates">-</div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="result" id="result" style="display: none;">
+      <div style="color: #0f0; font-weight: bold; margin-bottom: 10px;">CAPTURED:</div>
+      <img id="resultImg" alt="Screenshot" />
+    </div>
+  </div>
+
+  <div id="dashboard">
+    <div class="header">
+      <h1>🔴 Production Dashboard</h1>
+      <p>Real-time Analytics with Active JS</p>
+      <div style="margin-top: 10px;">
+        <span class="live-badge">● LIVE</span>
+      </div>
+    </div>
+
+    <!-- Live updating KPI cards -->
+    <div class="live-data" id="liveCards"></div>
+
+    <!-- Heat Map -->
+    <div class="visualization">
+      <div class="viz-title">🔥 Heat Map - 1,000,000 Points</div>
+      <canvas id="heatmap" width="1200" height="500"></canvas>
+    </div>
+
+    <!-- Scatter Plot -->
+    <div class="visualization">
+      <div class="viz-title">📊 Scatter Plot - 5,000,000 Points</div>
+      <canvas id="scatter" width="1200" height="400"></canvas>
+    </div>
+
+    <!-- Time Series -->
+    <div class="visualization">
+      <div class="viz-title">📈 Time Series - 8,000,000 Points</div>
+      <canvas id="timeseries" width="1200" height="400"></canvas>
+    </div>
+
+    <!-- Network Graph -->
+    <div class="visualization">
+      <div class="viz-title">🕸️ Network - 1,500,000 Nodes</div>
+      <canvas id="network" width="1200" height="500"></canvas>
+    </div>
+
+    <!-- Live Data Table -->
+    <div class="data-table">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>User</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>Value</th>
+            <th>Score</th>
+            <th>Region</th>
+            <th>Last Update</th>
+          </tr>
+        </thead>
+        <tbody id="dataTable"></tbody>
+      </table>
+    </div>
+
+    <div style="text-align: center; padding: 20px; color: #999;">
+      © 2024 Production Simulation | Nodes: <span id="nodeCount">-</span>
+    </div>
+  </div>
+
+  <script src="./dist/html-to-image.js"></script>
+
+  <script>
+    // ================================================
+    // PRODUCTION SIMULATION WITH ACTIVE JAVASCRIPT
+    // ================================================
+
+    const TIMINGS = {
+      pageStart: Date.now(),
+      genStart: null,
+      genEnd: null,
+      captureStart: null,
+      captureEnd: null
+    };
+
+    const STATE = {
+      counter: 0,
+      dataUpdates: 0,
+      metricsUpdates: 0,
+      tableUpdates: 0,
+      timers: []
+    };
+
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logDiv.insertBefore(entry, logDiv.firstChild);
+      console.log(`[${type.toUpperCase()}]`, message);
+
+      // Keep only last 50 entries
+      while (logDiv.children.length > 50) {
+        logDiv.removeChild(logDiv.lastChild);
+      }
+    }
+
+    // ================================================
+    // 1. LIVE COUNTER (updates every 100ms)
+    // ================================================
+    const counterInterval = setInterval(() => {
+      STATE.counter++;
+      document.getElementById('counter').textContent = STATE.counter;
+    }, 100);
+    STATE.timers.push(counterInterval);
+
+    // ================================================
+    // 2. GENERATE HEAVY DASHBOARD
+    // ================================================
+    log('Starting dashboard generation...', 'info');
+    TIMINGS.genStart = Date.now();
+
+    // Generate 300 live-updating KPI cards (3x more)
+    const liveCardsContainer = document.getElementById('liveCards');
+    const liveCardData = [];
+    for (let i = 0; i < 300; i++) {
+      const card = document.createElement('div');
+      card.className = 'live-card';
+      const value = Math.floor(Math.random() * 10000);
+      card.innerHTML = `
+        <div class="live-card-title">Metric ${i} <span class="live-badge">● LIVE</span></div>
+        <div class="live-card-value" data-card-id="${i}">${value}</div>
+      `;
+      liveCardsContainer.appendChild(card);
+      liveCardData.push(value);
+    }
+
+    // Live update cards every 2 seconds
+    const metricsInterval = setInterval(() => {
+      STATE.metricsUpdates++;
+      for (let i = 0; i < 300; i++) {
+        const change = Math.floor(Math.random() * 200) - 100;
+        liveCardData[i] = Math.max(0, liveCardData[i] + change);
+        const elem = document.querySelector(`[data-card-id="${i}"]`);
+        if (elem) {
+          elem.textContent = liveCardData[i];
+        }
+      }
+    }, 2000);
+    STATE.timers.push(metricsInterval);
+
+    // Generate 8000 table rows with live updates (2.5x more)
+    const tableBody = document.getElementById('dataTable');
+    const tableData = [];
+    const names = ['John', 'Jane', 'Bob', 'Alice', 'Charlie', 'Diana', 'Eve', 'Frank'];
+    const statuses = ['Active', 'Pending', 'Processing', 'Complete'];
+    const regions = ['NA', 'EU', 'APAC', 'LATAM'];
+
+    for (let i = 0; i < 8000; i++) {
+      const row = document.createElement('tr');
+      const data = {
+        id: 100000 + i,
+        name: `${names[i % names.length]} ${i}`,
+        email: `user${i}@company.com`,
+        status: statuses[i % statuses.length],
+        value: Math.floor(Math.random() * 10000),
+        score: Math.floor(Math.random() * 100),
+        region: regions[i % regions.length],
+        lastUpdate: 'Just now'
+      };
+      tableData.push(data);
+
+      row.innerHTML = `
+        <td>${data.id}</td>
+        <td>${data.name}</td>
+        <td>${data.email}</td>
+        <td data-status-${i}>${data.status}</td>
+        <td data-value-${i}>$${data.value}</td>
+        <td>${data.score}</td>
+        <td>${data.region}</td>
+        <td data-time-${i}>${data.lastUpdate}</td>
+      `;
+      tableBody.appendChild(row);
+    }
+
+    // Update random table rows every 3 seconds
+    const tableInterval = setInterval(() => {
+      STATE.tableUpdates++;
+      for (let i = 0; i < 20; i++) {
+        const idx = Math.floor(Math.random() * 8000);
+        tableData[idx].value = Math.floor(Math.random() * 10000);
+        tableData[idx].status = statuses[Math.floor(Math.random() * statuses.length)];
+
+        const valueElem = document.querySelector(`[data-value-${idx}]`);
+        const statusElem = document.querySelector(`[data-status-${idx}]`);
+        const timeElem = document.querySelector(`[data-time-${idx}]`);
+
+        if (valueElem) valueElem.textContent = `$${tableData[idx].value}`;
+        if (statusElem) statusElem.textContent = tableData[idx].status;
+        if (timeElem) timeElem.textContent = 'Just now';
+      }
+    }, 3000);
+    STATE.timers.push(tableInterval);
+
+    // Simulate data polling (like WebSocket/API calls)
+    const pollingInterval = setInterval(() => {
+      STATE.dataUpdates++;
+      // Simulate receiving data
+    }, 1000);
+    STATE.timers.push(pollingInterval);
+
+    // Draw HEAT MAP - 1,000,000 points
+    log('Drawing heat map (1M points)...');
+    const heatCanvas = document.getElementById('heatmap');
+    const heatCtx = heatCanvas.getContext('2d');
+    const cellSize = 2;
+    const cols = Math.floor(heatCanvas.width / cellSize);
+    const rows = Math.floor(heatCanvas.height / cellSize);
+
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const value = Math.sin(x / 30) * Math.cos(y / 30) * Math.sin((x + y) / 20) * 128 + 128;
+        const hue = (value / 255) * 240;
+        heatCtx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+        heatCtx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      }
+    }
+    const heatPoints = cols * rows;
+
+    // Draw SCATTER PLOT - 5,000,000 points (2.5x more)
+    log('Drawing scatter plot (5M points)...');
+    const scatterCanvas = document.getElementById('scatter');
+    const scatterCtx = scatterCanvas.getContext('2d');
+    scatterCtx.fillStyle = '#ffffff';
+    scatterCtx.fillRect(0, 0, scatterCanvas.width, scatterCanvas.height);
+    scatterCtx.globalAlpha = 0.03;
+
+    for (let i = 0; i < 5000000; i++) {
+      const x = Math.random() * scatterCanvas.width;
+      const y = Math.random() * scatterCanvas.height;
+      const hue = (x / scatterCanvas.width) * 360;
+      scatterCtx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+      scatterCtx.fillRect(x, y, 1, 1);
+    }
+    scatterCtx.globalAlpha = 1.0;
+
+    // Draw TIME SERIES - 8,000,000 points (2.5x more)
+    log('Drawing time series (8M points)...');
+    const tsCanvas = document.getElementById('timeseries');
+    const tsCtx = tsCanvas.getContext('2d');
+    tsCtx.fillStyle = '#ffffff';
+    tsCtx.fillRect(0, 0, tsCanvas.width, tsCanvas.height);
+    tsCtx.strokeStyle = 'rgba(102, 126, 234, 0.5)';
+    tsCtx.lineWidth = 1;
+    tsCtx.beginPath();
+
+    for (let i = 0; i < 8000000; i++) {
+      const x = (i / 8000000) * tsCanvas.width;
+      const y = tsCanvas.height / 2 +
+                Math.sin(i / 1000) * 80 +
+                Math.sin(i / 100) * 40 +
+                Math.sin(i / 10) * 10 +
+                Math.random() * 20 - 10;
+      if (i === 0) tsCtx.moveTo(x, y);
+      else tsCtx.lineTo(x, y);
+    }
+    tsCtx.stroke();
+
+    // Draw NETWORK GRAPH - 1,500,000 nodes (3x more)
+    log('Drawing network graph (1.5M nodes)...');
+    const netCanvas = document.getElementById('network');
+    const netCtx = netCanvas.getContext('2d');
+    netCtx.fillStyle = '#ffffff';
+    netCtx.fillRect(0, 0, netCanvas.width, netCanvas.height);
+
+    const nodes = [];
+    for (let i = 0; i < 1500000; i++) {
+      nodes.push({
+        x: Math.random() * netCanvas.width,
+        y: Math.random() * netCanvas.height
+      });
+    }
+
+    netCtx.strokeStyle = 'rgba(102, 126, 234, 0.02)';
+    netCtx.lineWidth = 0.5;
+    for (let i = 0; i < nodes.length; i += 100) {
+      const node = nodes[i];
+      for (let j = 0; j < 3; j++) {
+        const targetIdx = (i + Math.floor(Math.random() * 100)) % nodes.length;
+        const target = nodes[targetIdx];
+        netCtx.beginPath();
+        netCtx.moveTo(node.x, node.y);
+        netCtx.lineTo(target.x, target.y);
+        netCtx.stroke();
+      }
+    }
+
+    netCtx.fillStyle = 'rgba(102, 126, 234, 0.6)';
+    for (const node of nodes) {
+      netCtx.fillRect(node.x, node.y, 1, 1);
+    }
+
+    TIMINGS.genEnd = Date.now();
+    const genTime = ((TIMINGS.genEnd - TIMINGS.genStart) / 1000).toFixed(2);
+    const pageLoadTime = ((TIMINGS.genEnd - TIMINGS.pageStart) / 1000).toFixed(2);
+    const totalNodes = document.getElementById('dashboard').querySelectorAll('*').length;
+    const totalCanvasPoints = heatPoints + 5000000 + 8000000 + 1500000;
+
+    document.getElementById('pageLoadTime').textContent = `${pageLoadTime}s`;
+    document.getElementById('domNodes').textContent = totalNodes.toLocaleString();
+    document.getElementById('canvasPoints').textContent = totalCanvasPoints.toLocaleString();
+    document.getElementById('nodeCount').textContent = totalNodes.toLocaleString();
+
+    log(`Dashboard generated in ${genTime}s`, 'info');
+    log(`Total DOM nodes: ${totalNodes.toLocaleString()}`, 'info');
+    log(`Total canvas points: ${totalCanvasPoints.toLocaleString()}`, 'info');
+    log(`Active timers: ${STATE.timers.length}`, 'info');
+
+    // ================================================
+    // 3. AUTO-CAPTURE WITH OLD API (BLOCKING!)
+    // ================================================
+    setTimeout(() => {
+      log('⚠️  STARTING CAPTURE WITH OLD API...', 'warning');
+      log('⚠️  UI WILL FREEZE COMPLETELY!', 'warning');
+      log(`Counter at: ${STATE.counter}`, 'warning');
+
+      TIMINGS.captureStart = Date.now();
+      const captureStartCounter = STATE.counter;
+      document.getElementById('captureStart').textContent = new Date().toLocaleTimeString();
+
+      htmlToImage.toPng(document.getElementById('dashboard'), {
+        backgroundColor: '#ffffff',
+        pixelRatio: 1,
+        // OLD API - NO NON-BLOCKING
+      })
+      .then(dataUrl => {
+        TIMINGS.captureEnd = Date.now();
+        const duration = ((TIMINGS.captureEnd - TIMINGS.captureStart) / 1000).toFixed(2);
+        const missedUpdates = STATE.counter - captureStartCounter;
+
+        document.getElementById('captureDuration').textContent = `${duration}s`;
+        document.getElementById('missedUpdates').textContent = missedUpdates;
+
+        log(`✅ CAPTURE COMPLETE!`, 'info');
+        log(`Duration: ${duration}s`, 'info');
+        log(`Counter was FROZEN. Missed ${missedUpdates} updates!`, 'error');
+        log(`Counter resumed at: ${STATE.counter}`, 'info');
+
+        document.getElementById('resultImg').src = dataUrl;
+        document.getElementById('result').style.display = 'block';
+
+        // Log final stats
+        console.log('====================================');
+        console.log('🔴 OLD API - BLOCKING TEST RESULTS');
+        console.log('====================================');
+        console.log('Page Load:', pageLoadTime + 's');
+        console.log('Dashboard Generation:', genTime + 's');
+        console.log('Capture Duration:', duration + 's');
+        console.log('Missed Counter Updates:', missedUpdates);
+        console.log('Active Timers:', STATE.timers.length);
+        console.log('====================================');
+      })
+      .catch(error => {
+        log(`❌ CAPTURE FAILED: ${error.message}`, 'error');
+        console.error('Capture error:', error);
+      });
+
+    }, 3000); // Start capture 3 seconds after page load
+  </script>
+</body>
+</html>

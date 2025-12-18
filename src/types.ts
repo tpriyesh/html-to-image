@@ -1,3 +1,22 @@
+/**
+ * Context object passed through the cloning process to track progress
+ * and enable non-blocking behavior.
+ */
+export interface CloneContext {
+  /**
+   * Counter for number of nodes processed. Used to determine when to yield.
+   */
+  nodeCount: number
+  /**
+   * Timestamp of the last yield. Used for time-based yielding.
+   */
+  lastYieldTime?: number
+  /**
+   * Total number of nodes to process (estimated). Used for progress callbacks.
+   */
+  totalNodes?: number
+}
+
 export interface Options {
   /**
    * Width in pixels to be applied to node before rendering.
@@ -101,4 +120,78 @@ export interface Options {
    * An event handler for the error event when any image in html has problem with loading.
    */
   onImageErrorHandler?: OnErrorEventHandler
+
+  // ============================================
+  // NON-BLOCKING OPTIONS (Performance Tuning)
+  // ============================================
+
+  /**
+   * Enable non-blocking mode. When true, the library will periodically yield
+   * to the main thread during DOM traversal and cloning, preventing UI freezes.
+   *
+   * @default false
+   */
+  nonBlocking?: boolean
+
+  /**
+   * Number of nodes to process before yielding to the main thread.
+   * Lower values = more responsive UI but slower total time.
+   * Higher values = faster total time but may cause UI jank.
+   *
+   * Note: If `yieldBudget` is set, time-based yielding takes precedence.
+   * Only applies when `nonBlocking` is true.
+   * @default 50
+   */
+  yieldEvery?: number
+
+  /**
+   * Maximum time in milliseconds to spend on processing before yielding to the main thread.
+   * This enables time-based yielding instead of node-count based yielding.
+   * Recommended value: 16ms (one frame at 60fps) for maximum responsiveness.
+   *
+   * When set, this takes precedence over `yieldEvery`.
+   * Only applies when `nonBlocking` is true.
+   * @default undefined (uses node-count based yielding)
+   */
+  yieldBudget?: number
+
+  /**
+   * Progress callback that gets invoked periodically during capture.
+   * Receives the number of nodes processed and the total estimated nodes.
+   *
+   * Only applies when `nonBlocking` is true.
+   * @param processed Number of nodes processed so far
+   * @param total Total number of nodes to process (estimated)
+   */
+  onProgress?: (processed: number, total: number) => void
+
+  /**
+   * Maximum number of nodes to process. If the DOM exceeds this count,
+   * the capture will be aborted and the promise will reject.
+   * Set to 0 or undefined to disable the limit.
+   *
+   * @default undefined (no limit)
+   */
+  maxNodes?: number
+
+  /**
+   * Maximum time in milliseconds to spend on capture. If exceeded,
+   * the capture will be aborted and the promise will reject.
+   * Set to 0 or undefined to disable the timeout.
+   *
+   * @default undefined (no timeout)
+   */
+  timeout?: number
+
+  /**
+   * Internal context object for tracking progress. Not meant to be set by users.
+   * @internal
+   */
+  _context?: CloneContext
+
+  /**
+   * Internal start time for timeout tracking.
+   * @internal
+   */
+  _startTime?: number
 }

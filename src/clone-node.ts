@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle, no-plusplus, no-await-in-loop, no-restricted-syntax */
 import type { Options } from './types'
 import { clonePseudoElements } from './clone-pseudos'
 import {
@@ -5,16 +6,187 @@ import {
   toArray,
   isInstanceOfElement,
   getStyleProperties,
+  yieldToMain,
 } from './util'
 import { getMimeType } from './mimes'
 import { resourceToDataURL } from './dataurl'
 
-async function cloneCanvasElement(canvas: HTMLCanvasElement) {
-  const dataURL = canvas.toDataURL()
-  if (dataURL === 'data:,') {
+/**
+ * Error thrown when capture is aborted due to limits.
+ */
+export class CaptureAbortedError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: 'timeout' | 'max_nodes',
+  ) {
+    super(message)
+    this.name = 'CaptureAbortedError'
+  }
+}
+
+/**
+ * Checks if the capture should be aborted due to timeout or node limits.
+ * Throws CaptureAbortedError if limits are exceeded.
+ */
+function checkLimits(options: Options): void {
+  const context = options._context
+
+  // Check max nodes limit
+  if (options.maxNodes && context && context.nodeCount >= options.maxNodes) {
+    throw new CaptureAbortedError(
+      `Capture aborted: exceeded maximum node limit of ${options.maxNodes}`,
+      'max_nodes',
+    )
+  }
+
+  // Check timeout
+  if (options.timeout && options._startTime) {
+    const elapsed = Date.now() - options._startTime
+    if (elapsed >= options.timeout) {
+      throw new CaptureAbortedError(
+        `Capture aborted: exceeded timeout of ${options.timeout}ms`,
+        'timeout',
+      )
+    }
+  }
+}
+
+/**
+ * Yields to main thread if non-blocking mode is enabled.
+ * Supports both time-based and node-count based yielding.
+ * Invokes progress callback if provided.
+ */
+async function maybeYieldToMain(options: Options): Promise<void> {
+  if (!options.nonBlocking || !options._context) {
+    return
+  }
+
+  const context = options._context
+  context.nodeCount++
+
+  // Check limits before continuing
+  checkLimits(options)
+
+  // Invoke progress callback if provided
+  if (options.onProgress && context.totalNodes) {
+    options.onProgress(context.nodeCount, context.totalNodes)
+  }
+
+  let shouldYield = false
+
+  // Time-based yielding (takes precedence)
+  if (options.yieldBudget !== undefined) {
+    const timeSinceLastYield =
+      Date.now() - (context.lastYieldTime ?? options._startTime ?? Date.now())
+    if (timeSinceLastYield >= options.yieldBudget) {
+      shouldYield = true
+    }
+  }
+  // Node-count based yielding (fallback)
+  else {
+    const yieldEvery = options.yieldEvery ?? 50
+    if (context.nodeCount % yieldEvery === 0) {
+      shouldYield = true
+    }
+  }
+
+  if (shouldYield) {
+    context.lastYieldTime = Date.now()
+    await yieldToMain()
+  }
+}
+
+/**
+ * Clones a canvas element by converting it to an image.
+ * For large canvases, uses OffscreenCanvas in chunks to avoid blocking.
+ */
+async function cloneCanvasElement(
+  canvas: HTMLCanvasElement,
+  options?: Options,
+) {
+  // Check if canvas is empty
+  const testDataURL = canvas.toDataURL()
+  if (testDataURL === 'data:,') {
     return canvas.cloneNode(false) as HTMLCanvasElement
   }
-  return createImage(dataURL)
+
+  const width = canvas.width
+  const height = canvas.height
+  const isLargeCanvas = width * height > 500000 // > 500K pixels
+
+  // For small canvases or if OffscreenCanvas not supported, use original method
+  if (!isLargeCanvas || !('OffscreenCanvas' in window)) {
+    return createImage(testDataURL)
+  }
+
+  // For large canvases: Use chunked approach to avoid long blocking
+  try {
+    const dataURL = await canvasToDataURLChunked(canvas, options)
+    return createImage(dataURL)
+  } catch (e) {
+    // Fallback to synchronous method
+    console.warn('Chunked canvas capture failed, using fallback:', e)
+    return createImage(canvas.toDataURL())
+  }
+}
+
+/**
+ * Converts a large canvas to data URL in chunks to avoid blocking.
+ * Uses ImageData chunks and yields between processing.
+ */
+async function canvasToDataURLChunked(
+  sourceCanvas: HTMLCanvasElement,
+  options?: Options,
+): Promise<string> {
+  const width = sourceCanvas.width
+  const height = sourceCanvas.height
+  const ctx = sourceCanvas.getContext('2d')
+
+  if (!ctx) {
+    return sourceCanvas.toDataURL()
+  }
+
+  // Create an OffscreenCanvas for the final composition
+  const offscreen = new OffscreenCanvas(width, height)
+  const offCtx = offscreen.getContext(
+    '2d',
+  ) as OffscreenCanvasRenderingContext2D | null
+
+  if (!offCtx) {
+    return sourceCanvas.toDataURL()
+  }
+
+  // Process in horizontal strips to yield periodically
+  const STRIP_HEIGHT = 256 // Process 256 rows at a time
+  const totalStrips = Math.ceil(height / STRIP_HEIGHT)
+
+  for (let i = 0; i < totalStrips; i += 1) {
+    const y = i * STRIP_HEIGHT
+    const stripHeight = Math.min(STRIP_HEIGHT, height - y)
+
+    // Get image data for this strip
+    const imageData = ctx.getImageData(0, y, width, stripHeight)
+
+    // Put it on the offscreen canvas
+    offCtx.putImageData(imageData, 0, y)
+
+    // Yield to main thread between strips (if non-blocking mode)
+    if (options?.nonBlocking && i % 4 === 3) {
+      // eslint-disable-next-line no-await-in-loop
+      await yieldToMain()
+    }
+  }
+
+  // Convert to blob (this part still blocks but for smaller data)
+  const blob = await (offscreen as any).convertToBlob({ type: 'image/png' })
+
+  // Convert blob to data URL
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
 }
 
 async function cloneVideoElement(video: HTMLVideoElement, options: Options) {
@@ -55,7 +227,7 @@ async function cloneSingleNode<T extends HTMLElement>(
   options: Options,
 ): Promise<HTMLElement> {
   if (isInstanceOfElement(node, HTMLCanvasElement)) {
-    return cloneCanvasElement(node)
+    return cloneCanvasElement(node, options)
   }
 
   if (isInstanceOfElement(node, HTMLVideoElement)) {
@@ -104,17 +276,16 @@ async function cloneChildren<T extends HTMLElement>(
     return clonedNode
   }
 
-  await children.reduce(
-    (deferred, child) =>
-      deferred
-        .then(() => cloneNode(child, options))
-        .then((clonedChild: HTMLElement | null) => {
-          if (clonedChild) {
-            clonedNode.appendChild(clonedChild)
-          }
-        }),
-    Promise.resolve(),
-  )
+  // Process children with periodic yielding to prevent UI blocking
+  for (const child of children) {
+    // Yield to main thread periodically (if non-blocking mode enabled)
+    await maybeYieldToMain(options)
+
+    const clonedChild = await cloneNode(child, options)
+    if (clonedChild) {
+      clonedNode.appendChild(clonedChild)
+    }
+  }
 
   return clonedNode
 }
@@ -212,6 +383,9 @@ async function ensureSVGSymbols<T extends HTMLElement>(
 
   const processedDefs: { [key: string]: HTMLElement } = {}
   for (let i = 0; i < uses.length; i++) {
+    // Yield periodically during SVG symbol processing
+    await maybeYieldToMain(options)
+
     const use = uses[i]
     const id = use.getAttribute('xlink:href')
     if (id) {

@@ -1,4 +1,37 @@
+/* eslint-disable no-plusplus */
 import type { Options } from './types'
+
+/**
+ * Yields execution to the main thread to prevent UI blocking.
+ * Uses requestIdleCallback when available, falls back to setTimeout.
+ * This allows the browser to process user interactions, animations, and repaints.
+ */
+export function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    if ('requestIdleCallback' in window) {
+      ;(window as any).requestIdleCallback(() => resolve(), { timeout: 16 })
+    } else {
+      setTimeout(resolve, 0)
+    }
+  })
+}
+
+/**
+ * Tracks node processing and yields periodically to prevent UI blocking.
+ * Returns true if yield was performed.
+ */
+export async function maybeYield(
+  context: { nodeCount: number },
+  yieldEvery: number,
+): Promise<boolean> {
+  // eslint-disable-next-line no-plusplus
+  context.nodeCount += 1
+  if (context.nodeCount % yieldEvery === 0) {
+    await yieldToMain()
+    return true
+  }
+  return false
+}
 
 export function resolveUrl(url: string, baseUrl: string | null): string {
   // url is absolute already

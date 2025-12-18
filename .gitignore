@@ -7,7 +7,7 @@
 npm-debug.log
 yarn-error.log
 node_modules
-dist
-es
-lib
+# dist - committed for GitHub installs
+# es - committed for GitHub installs
+# lib - committed for GitHub installs
 test/coverage

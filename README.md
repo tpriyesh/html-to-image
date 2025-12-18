@@ -302,6 +302,77 @@ Defaults to `image/png`
 
 An array of style property names. Can be used to manually specify which style properties are included when cloning nodes. This can be useful for performance-critical scenarios.
 
+### nonBlocking
+
+Set to `true` to enable non-blocking mode. This prevents UI freezing for heavy DOMs by yielding control back to the browser periodically during the capture process.
+
+Defaults to `false`
+
+**Example:**
+```js
+htmlToImage.toPng(node, {
+  nonBlocking: true,
+  yieldEvery: 100,
+  timeout: 120000,
+  onProgress: (processed, total) => {
+    const percent = Math.round((processed / total) * 100);
+    console.log(`Progress: ${percent}%`);
+  }
+});
+```
+
+### yieldEvery
+
+Number of nodes to process before yielding control back to the browser. Only used when `nonBlocking: true`.
+
+Defaults to `50`
+
+Lower values = more responsive UI but slower capture. Higher values = faster capture but less responsive UI.
+
+### yieldBudget
+
+Time in milliseconds before yielding control back to the browser. When set, this takes precedence over `yieldEvery`. Only used when `nonBlocking: true`.
+
+No default value (node-count based yielding is used by default)
+
+### timeout
+
+Maximum time in milliseconds to wait for capture to complete. Useful to prevent runaway captures on pathological DOMs. Only used when `nonBlocking: true`.
+
+No default value (no timeout)
+
+### maxNodes
+
+Maximum number of DOM nodes to process. Capture will abort if this limit is exceeded. Only used when `nonBlocking: true`.
+
+No default value (no limit)
+
+### onProgress
+
+A callback function that receives progress updates during capture. Called with `(processed, total)` where both are numbers representing operations completed and total operations estimated. Only used when `nonBlocking: true`.
+
+**Example:**
+```js
+onProgress: (processed, total) => {
+  const percent = Math.min(100, Math.round((processed / total) * 100));
+  updateProgressBar(percent);
+}
+```
+
+## Test Pages
+
+Two test pages are included to demonstrate the difference between blocking and non-blocking modes:
+
+- `test-blocking-production.html` - Uses OLD API (blocks UI)
+- `test-non-blocking-production.html` - Uses NEW API (keeps UI responsive)
+
+Both pages simulate heavy production dashboards with:
+- 60,000+ DOM nodes
+- 15+ million canvas data points
+- Active JavaScript timers
+
+Open both pages to compare the behavior.
+
 ## Browsers
 
 Only standard lib is currently used, but make sure your browser supports:

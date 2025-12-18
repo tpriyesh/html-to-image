@@ -1,7 +1,47 @@
+/* eslint-disable no-underscore-dangle, no-plusplus, no-await-in-loop, no-restricted-syntax */
 import type { Options } from './types'
-import { toArray } from './util'
+import { toArray, yieldToMain } from './util'
 import { fetchAsDataURL } from './dataurl'
 import { shouldEmbed, embedResources } from './embed-resources'
+
+/**
+ * Yields to main thread if non-blocking mode is enabled.
+ * Supports both time-based and node-count based yielding.
+ * Uses a separate counter for font traversal since it's a different phase.
+ */
+async function maybeYieldToMain(
+  options: Options,
+  counter: { count: number; lastYieldTime?: number },
+): Promise<void> {
+  if (!options.nonBlocking) {
+    return
+  }
+
+  counter.count++
+
+  let shouldYield = false
+
+  // Time-based yielding (takes precedence)
+  if (options.yieldBudget !== undefined) {
+    const timeSinceLastYield =
+      Date.now() - (counter.lastYieldTime ?? options._startTime ?? Date.now())
+    if (timeSinceLastYield >= options.yieldBudget) {
+      shouldYield = true
+    }
+  }
+  // Node-count based yielding (fallback)
+  else {
+    const yieldEvery = options.yieldEvery ?? 50
+    if (counter.count % yieldEvery === 0) {
+      shouldYield = true
+    }
+  }
+
+  if (shouldYield) {
+    counter.lastYieldTime = Date.now()
+    await yieldToMain()
+  }
+}
 
 interface Metadata {
   url: string
@@ -206,22 +246,32 @@ function normalizeFontFamily(font: string) {
   return font.trim().replace(/["']/g, '')
 }
 
-function getUsedFonts(node: HTMLElement) {
+async function getUsedFonts(node: HTMLElement, options: Options) {
   const fonts = new Set<string>()
-  function traverse(node: HTMLElement) {
+  // eslint-disable-next-line no-underscore-dangle
+  const counter = { count: 0, lastYieldTime: options._startTime ?? Date.now() }
+
+  async function traverse(node: HTMLElement) {
+    // Yield periodically during font traversal
+    await maybeYieldToMain(options, counter)
+
     const fontFamily =
       node.style.fontFamily || getComputedStyle(node).fontFamily
     fontFamily.split(',').forEach((font) => {
       fonts.add(normalizeFontFamily(font))
     })
 
-    Array.from(node.children).forEach((child) => {
+    const children = Array.from(node.children)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const child of children) {
       if (child instanceof HTMLElement) {
-        traverse(child)
+        // eslint-disable-next-line no-await-in-loop
+        await traverse(child)
       }
-    })
+    }
   }
-  traverse(node)
+
+  await traverse(node)
   return fonts
 }
 
@@ -230,7 +280,7 @@ export async function getWebFontCSS<T extends HTMLElement>(
   options: Options,
 ): Promise<string> {
   const rules = await parseWebFontRules(node, options)
-  const usedFonts = getUsedFonts(node)
+  const usedFonts = await getUsedFonts(node, options)
   const cssTexts = await Promise.all(
     rules
       .filter((rule) =>
